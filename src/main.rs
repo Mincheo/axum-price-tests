@@ -7,8 +7,11 @@ use axum::{
     response::IntoResponse,
     Router, routing::get,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
+
+type GlobalPrice = Arc<RwLock<Option<u64>>>;
+
 #[tokio::main]
 async fn main() {
 
@@ -29,7 +32,7 @@ fn app(state: GlobalPrice) -> Router {
         .with_state(state)
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct PriceStruct {
     price: u64,
 }
@@ -66,5 +69,49 @@ let mut global_price = global_price.write().await;
 Ok(StatusCode::OK)
 }
 
-type GlobalPrice = Arc<RwLock<Option<u64>>>;
 
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+    use ::axum_test::TestServer;
+
+    #[tokio::test]
+    async fn test_get_price_ok(){
+        let state: GlobalPrice = Arc::new(RwLock::new(Some(10)));
+        let app = app(state);
+        let server = TestServer::new(app).unwrap();
+        let response = server.get("/price").await;
+        assert_eq!(response.text(), "10");
+    }
+
+    #[tokio::test]
+    async fn test_get_price_not_found(){
+        let state:GlobalPrice = Arc::new(RwLock::new(None));
+        let app = app(state);
+        let server = TestServer::new(app).unwrap();
+        let response = server.get("/price").await;
+        assert_eq!(response.status_code(),StatusCode::NOT_FOUND);
+
+    }
+    #[tokio::test]
+    async fn test_upd_price(){
+        let state:GlobalPrice = Arc::new(RwLock::new(None));
+        let app = app(state);
+        let server = TestServer::new(app).unwrap();
+        let _response1 = server.patch("/price").json(&PriceStruct {price:10}).await;
+        assert_eq!(_response1.status_code(),StatusCode::OK);
+        let _response2 = server.get("/price").await;
+        assert_eq!(_response2.text(), "10");
+        }
+    
+    #[tokio::test]
+    async fn test_del_price(){
+        let state: GlobalPrice = Arc::new(RwLock::new(Some(10)));
+        let app = app(state);
+        let server = TestServer::new(app).unwrap();
+        let response = server.delete("/price").await;
+        assert_eq!(response.status_code(),StatusCode::OK);
+
+    }
+}
